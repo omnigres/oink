@@ -61,6 +61,11 @@ protected:
 
 struct endpoint {
 
+  struct msg {
+    std::size_t hash;
+    bip::offset_ptr<void> message_;
+  };
+
   endpoint(arena &arena, const char *mq_segment_name, size_t mq_max_messages)
       : arena(arena),
         mq(bip::open_or_create, mq_segment_name, mq_max_messages, sizeof(std::size_t)),
@@ -69,14 +74,15 @@ struct endpoint {
 
   template <typename T> auto get_allocator() { return arena.get_allocator<T>(); }
 
+  msg &get_msg(std::size_t index) {
+    bip::scoped_lock lock(msgs_->mutex);
+    return msgs_->container.at(index);
+  }
+
 protected:
-  struct msg {
-    std::size_t hash;
-    bip::offset_ptr<void> message_;
-  };
   using msg_allocator_t = allocator<msg>;
   using msg_vec =
-      shared_container<bc::vector<msg, msg_allocator_t>, bip::interprocess_upgradable_mutex>;
+      shared_container<bc::vector<msg, msg_allocator_t>, bip::interprocess_recursive_mutex>;
 
   arena &arena;
   bip::message_queue mq;
@@ -125,10 +131,16 @@ struct receiver : endpoint {
       bool matched = false;
 
       bip::scoped_lock lock(msgs_->mutex);
-      auto &j = msgs_->container.at(i);
+      auto &j = get_msg(i);
 
       (try_handle<Msg>(j, matched, visitor), ...);
 
+      if (!matched) {
+        if constexpr (requires(decltype(visitor) v, std::size_t index) { v(index); }) {
+          visitor(i);
+          matched = true;
+        }
+      }
       if (!matched) {
         throw unknown_message(j.hash);
       }
