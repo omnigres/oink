@@ -102,6 +102,18 @@ struct sender : endpoint {
 struct receiver : endpoint {
   using endpoint::endpoint;
 
+  struct unknown_message : public std::exception {
+    explicit unknown_message(std::size_t hash)
+        : hash(hash), message(std::string("unknown message ") + std::to_string(hash)) {}
+
+    const char *what() const noexcept override { return message.c_str(); }
+    std::size_t message_hash() const { return hash; }
+
+  private:
+    std::size_t hash;
+    std::string message;
+  };
+
   template <message... Msg> bool receive(auto visitor) {
     bip::message_queue::size_type recvd_size;
     unsigned int priority;
@@ -118,8 +130,7 @@ struct receiver : endpoint {
       (try_handle<Msg>(j, matched, visitor), ...);
 
       if (!matched) {
-        // handle unknown message type if necessary
-      } else {
+        throw unknown_message(j.hash);
       }
 
       if (mq.get_num_msg() == 0) {
