@@ -129,17 +129,29 @@ struct receiver : endpoint {
                          std::chrono::system_clock::now() + std::chrono::milliseconds(500))) {
 
       bool matched = false;
+      bool accepted = true;
 
       bip::scoped_lock lock(msgs_->mutex);
       auto &j = get_msg(i);
 
-      (try_handle<Msg>(j, matched, visitor), ...);
+      (try_handle<Msg>(j, matched, accepted, visitor), ...);
 
       if (!matched) {
-        if constexpr (requires(decltype(visitor) v, std::size_t index) { v(index); }) {
-          visitor(i);
+        if constexpr (requires(decltype(visitor) v, std::size_t index) {
+                        { v(index) };
+                      }) {
+          using return_type = std::invoke_result_t<decltype(visitor), std::size_t>;
+          if constexpr (std::same_as<return_type, bool>) {
+            accepted = visitor(i);
+          } else {
+            visitor(i);
+          }
           matched = true;
         }
+      }
+      if (!accepted) {
+        mq.send(&i, sizeof(i), 0);
+        return false;
       }
       if (!matched) {
         throw unknown_message(j.hash);
@@ -156,10 +168,17 @@ struct receiver : endpoint {
   }
 
 private:
-  template <message T> void try_handle(msg &j, bool &matched, auto visitor) {
+  template <message T> void try_handle(msg &j, bool &matched, bool &accepted, auto visitor) {
     if (j.hash == std::hash<std::string>{}(T::name())) {
-      visitor(*(static_cast<T *>(j.message_.get())));
-      get_allocator<T>().deallocate(bip::offset_ptr<T>(static_cast<T *>(j.message_.get())), 1);
+      using return_type = std::invoke_result_t<decltype(visitor), T &>;
+      if constexpr (std::same_as<return_type, bool>) {
+        accepted = visitor(*(static_cast<T *>(j.message_.get())));
+      } else {
+        visitor(*(static_cast<T *>(j.message_.get())));
+      }
+      if (accepted) {
+        get_allocator<T>().deallocate(bip::offset_ptr<T>(static_cast<T *>(j.message_.get())), 1);
+      }
       matched = true;
     }
   }
