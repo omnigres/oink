@@ -30,7 +30,9 @@ TEST_CASE("smoke test") {
     mymsg1(const char *msg, const oink::allocator<char> &alloc) : message(msg, alloc) {}
   };
 
-  oink::sender endpoint("oink_test", 65536, "oink_test_mq", 1024);
+  oink::arena arena("oink_test", 65536);
+
+  oink::sender endpoint(arena, "oink_test_mq", 1024);
 
   auto m = endpoint.send<mymsg>(123);
   CHECK(m.i == 123);
@@ -38,7 +40,7 @@ TEST_CASE("smoke test") {
 
   CHECK(m1.message == "allocator");
 
-  oink::receiver rendpoint("oink_test", 65536, "oink_test_mq", 1024);
+  oink::receiver rendpoint(arena, "oink_test_mq", 1024);
   int received = 0;
   CHECK(rendpoint.receive<mymsg, mymsg1>(
       overloaded{[&](mymsg &msg) { received = msg.i; }, [](mymsg1 &msg) {}}));
@@ -66,11 +68,13 @@ TEST_CASE("smoke test (multithreading)") {
     static constexpr const char *name() { return "stop"; }
   };
 
-  oink::sender endpoint("oink_test", 65536 * 100, "oink_test_mq", 1024);
+  oink::arena arena("oink_test", 65536 * 100);
+
+  oink::sender endpoint(arena, "oink_test_mq", 1024);
 
   std::vector<int> values;
   std::thread rt([&]() {
-    oink::receiver rendpoint("oink_test", 65536 * 100, "oink_test_mq", 1024);
+    oink::receiver rendpoint(arena, "oink_test_mq", 1024);
     bool done = false;
     while (!done) {
       rendpoint.receive<mymsg, stop>(

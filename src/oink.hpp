@@ -36,26 +36,15 @@ concept message = requires(T t) {
   { T::name() } -> std::same_as<const char *>;
 };
 
-struct endpoint {
-  struct msg {
-    std::size_t hash;
-    bip::offset_ptr<void> message_;
-  };
-
-  using msg_allocator_t = bip::allocator<msg, bip::managed_shared_memory::segment_manager>;
-  using msg_vec =
-      shared_container<bc::vector<msg, msg_allocator_t>, bip::interprocess_upgradable_mutex>;
+struct arena {
 
   struct header {};
 
   using header_t = shared_container<header, bip::interprocess_upgradable_mutex>;
 
-  endpoint(const char *segment_name, size_t segment_size, const char *mq_segment_name,
-           size_t mq_max_messages)
+  arena(const char *segment_name, size_t segment_size)
       : segment(bip::open_or_create, segment_name, segment_size),
-        mq(bip::open_or_create, mq_segment_name, mq_max_messages, sizeof(std::size_t)),
-        header_(segment.find_or_construct<header_t>("__header")()),
-        msgs_(segment.find_or_construct<msg_vec>("__msgs")(segment.get_segment_manager())) {}
+        header_(segment.find_or_construct<header_t>("__header")()) {}
 
   auto get_segment_manager() { return segment.get_segment_manager(); }
 
@@ -66,9 +55,32 @@ struct endpoint {
 
 protected:
   bip::managed_shared_memory segment;
-  bip::message_queue mq;
 
   header_t *header_;
+};
+
+struct endpoint {
+
+  endpoint(arena &arena, const char *mq_segment_name, size_t mq_max_messages)
+      : arena(arena),
+        mq(bip::open_or_create, mq_segment_name, mq_max_messages, sizeof(std::size_t)),
+        msgs_(arena.get_segment_manager()->find_or_construct<msg_vec>("__msgs")(
+            arena.get_segment_manager())) {}
+
+  template <typename T> auto get_allocator() { return arena.get_allocator<T>(); }
+
+protected:
+  struct msg {
+    std::size_t hash;
+    bip::offset_ptr<void> message_;
+  };
+  using msg_allocator_t = allocator<msg>;
+  using msg_vec =
+      shared_container<bc::vector<msg, msg_allocator_t>, bip::interprocess_upgradable_mutex>;
+
+  arena &arena;
+  bip::message_queue mq;
+
   msg_vec *msgs_;
 };
 
