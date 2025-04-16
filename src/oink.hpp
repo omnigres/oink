@@ -38,6 +38,10 @@ concept message = requires(T t) {
 
 struct arena {
 
+  friend struct endpoint;
+  friend struct sender;
+  friend struct receiver;
+
   struct header {};
 
   using header_t = shared_container<header, bip::interprocess_upgradable_mutex>;
@@ -53,6 +57,8 @@ struct arena {
         segment.get_segment_manager());
   }
 
+  void *get_address() { return segment.get_address(); }
+
 protected:
   bip::managed_shared_memory segment;
 
@@ -63,20 +69,19 @@ struct endpoint {
 
   struct msg {
     std::size_t hash;
-    bip::offset_ptr<void> message_;
+    std::ptrdiff_t offset;
   };
 
   endpoint(arena &arena, const char *mq_segment_name, size_t mq_max_messages)
-      : arena(arena),
-        mq(bip::open_or_create, mq_segment_name, mq_max_messages, sizeof(std::size_t)),
+      : arena(arena), mq(bip::open_or_create, mq_segment_name, mq_max_messages, sizeof(msg)),
         msgs_(arena.get_segment_manager()->find_or_construct<msg_vec>("__msgs")(
             arena.get_segment_manager())) {}
 
   template <typename T> auto get_allocator() { return arena.get_allocator<T>(); }
 
-  msg &get_msg(std::size_t index) {
-    bip::scoped_lock lock(msgs_->mutex);
-    return msgs_->container.at(index);
+  template <typename T> T &get_msg(std::ptrdiff_t index) {
+    void *addr = static_cast<char *>(arena.segment.get_address()) + index;
+    return reinterpret_cast<T &>(addr);
   }
 
 protected:
@@ -96,11 +101,10 @@ struct sender : endpoint {
   template <message M, typename... Args> M &send(Args &&...args) {
     auto msg_ = get_allocator<M>().allocate(1);
     std::construct_at(msg_.get(), std::forward<Args>(args)...);
-    bip::scoped_lock lock(msgs_->mutex);
-    auto m = msgs_->container.emplace(msgs_->container.end(),
-                                      msg{std::hash<std::string>{}(M::name()), msg_});
-    size_t i = msgs_->container.index_of(m);
-    mq.send(&i, sizeof(i), 0);
+    std::ptrdiff_t offset = reinterpret_cast<char *>(msg_.get()) -
+                            reinterpret_cast<char *>(arena.segment.get_address());
+    auto m = msg{.hash = std::hash<std::string>{}(M::name()), .offset = offset};
+    mq.send(&m, sizeof(decltype(m)), 0);
     return *msg_;
   }
 };
@@ -124,37 +128,35 @@ struct receiver : endpoint {
     bip::message_queue::size_type recvd_size;
     unsigned int priority;
 
-    std::size_t i;
-    if (mq.timed_receive(&i, sizeof(i), recvd_size, priority,
+    msg m;
+    if (mq.timed_receive(&m, sizeof(m), recvd_size, priority,
                          std::chrono::system_clock::now() + std::chrono::milliseconds(500))) {
 
       bool matched = false;
       bool accepted = true;
 
-      bip::scoped_lock lock(msgs_->mutex);
-      auto &j = get_msg(i);
-
-      (try_handle<Msg>(j, matched, accepted, visitor), ...);
+      (try_handle<Msg>(m, matched, accepted, visitor), ...);
 
       if (!matched) {
-        if constexpr (requires(decltype(visitor) v, std::size_t index) {
+        if constexpr (requires(decltype(visitor) v, msg &index) {
                         { v(index) };
                       }) {
-          using return_type = std::invoke_result_t<decltype(visitor), std::size_t>;
+          using return_type = std::invoke_result_t<decltype(visitor), msg &>;
           if constexpr (std::same_as<return_type, bool>) {
-            accepted = visitor(i);
+            accepted = visitor(m);
           } else {
-            visitor(i);
+            visitor(m);
           }
           matched = true;
         }
       }
+
       if (!accepted) {
-        mq.send(&i, sizeof(i), 0);
+        mq.send(&m, sizeof(m), 0);
         return false;
       }
       if (!matched) {
-        throw unknown_message(j.hash);
+        throw unknown_message(m.hash);
       }
 
       if (mq.get_num_msg() == 0) {
@@ -170,16 +172,21 @@ struct receiver : endpoint {
 private:
   template <message T> void try_handle(msg &j, bool &matched, bool &accepted, auto visitor) {
     if (j.hash == std::hash<std::string>{}(T::name())) {
-      using return_type = std::invoke_result_t<decltype(visitor), T &>;
-      if constexpr (std::same_as<return_type, bool>) {
-        accepted = visitor(*(static_cast<T *>(j.message_.get())));
-      } else {
-        visitor(*(static_cast<T *>(j.message_.get())));
+      if constexpr (requires(decltype(visitor) v, T &index) {
+                      { v(index) };
+                    }) {
+        using return_type = std::invoke_result_t<decltype(visitor), T &>;
+        auto p = reinterpret_cast<T *>(static_cast<char *>(arena.segment.get_address()) + j.offset);
+        if constexpr (std::same_as<return_type, bool>) {
+          accepted = visitor(*p);
+        } else {
+          visitor(*p);
+        }
+        if (accepted) {
+          get_allocator<T>().deallocate(p, 1);
+        }
+        matched = true;
       }
-      if (accepted) {
-        get_allocator<T>().deallocate(bip::offset_ptr<T>(static_cast<T *>(j.message_.get())), 1);
-      }
-      matched = true;
     }
   }
 };

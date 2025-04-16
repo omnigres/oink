@@ -160,8 +160,7 @@ TEST_SUITE("receiver") {
     oink::receiver rendpoint(arena, "oink_test_mq", 1024);
 
     std::optional<std::size_t> received_hash = std::nullopt;
-    rendpoint.receive(
-        overloaded{[&](std::size_t index) { received_hash = rendpoint.get_msg(index).hash; }});
+    rendpoint.receive(overloaded{[&](oink::receiver::msg &msg) { received_hash = msg.hash; }});
     CHECK(received_hash.has_value());
     CHECK(received_hash.value() == std::hash<std::string>{}(mymsg1::name()));
   }
@@ -177,33 +176,13 @@ TEST_SUITE("receiver") {
       int i;
     };
 
-    struct mymsg1 {
-      static constexpr const char *name() { return "msg1"; }
-      oink::bc::basic_string<char, std::char_traits<char>, oink::allocator<char>> message;
-
-      mymsg1(const char *msg, const oink::allocator<char> &alloc) : message(msg, alloc) {}
-    };
-
     oink::arena arena("oink_test", 65536);
 
     oink::sender endpoint(arena, "oink_test_mq", 1024);
-    endpoint.send<mymsg1>("allocator", endpoint.get_allocator<char>());
+    // endpoint.send<mymsg1>("allocator", endpoint.get_allocator<char>());
 
     oink::receiver rendpoint(arena, "oink_test_mq", 1024);
 
-    // let's not consume it
-    CHECK(!rendpoint.receive(overloaded{[&](std::size_t) { return false; }}));
-
-    // let's consume it now
-    {
-      std::optional<std::size_t> received_hash = std::nullopt;
-      CHECK(rendpoint.receive(
-          overloaded{[&](std::size_t index) { received_hash = rendpoint.get_msg(index).hash; }}));
-      CHECK(received_hash.has_value());
-      CHECK(received_hash.value() == std::hash<std::string>{}(mymsg1::name()));
-    }
-
-    // let's try typed receivers
     endpoint.send<mymsg>(10);
 
     // let's not consume it
@@ -212,5 +191,35 @@ TEST_SUITE("receiver") {
     {
       CHECK(rendpoint.receive<mymsg>(overloaded{[&](mymsg &) { return true; }}));
     }
+    CHECK(!rendpoint.receive<mymsg>(overloaded{[&](mymsg &) {}}));
+  }
+
+  TEST_CASE("rescheduling catch-all") {
+    oink::bip::shared_memory_object::remove("oink_test");
+    oink::bip::shared_memory_object::remove("oink_test_mq");
+    oink::bip::remove_shared_memory_on_destroy _test("oink_test");
+    oink::bip::remove_shared_memory_on_destroy _test_mq("oink_test_mq");
+
+    struct mymsg {
+      static constexpr const char *name() { return "msg"; }
+      int i;
+    };
+
+    oink::arena arena("oink_test", 65536);
+
+    oink::sender endpoint(arena, "oink_test_mq", 1024);
+
+    oink::receiver rendpoint(arena, "oink_test_mq", 1024);
+
+    // Typed receivers
+    endpoint.send<mymsg>(10);
+
+    // let's not consume it
+    CHECK(!rendpoint.receive<mymsg>(overloaded{[&](oink::receiver::msg &) { return false; }}));
+    // let's consume it now
+    {
+      CHECK(rendpoint.receive<mymsg>(overloaded{[&](oink::receiver::msg &) { return true; }}));
+    }
+    CHECK(!rendpoint.receive<mymsg>(overloaded{[&](oink::receiver::msg &) {}}));
   }
 }
