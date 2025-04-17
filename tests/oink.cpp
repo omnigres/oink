@@ -129,8 +129,7 @@ TEST_SUITE("receiver") {
 
     CHECK_THROWS_WITH_AS(
         rendpoint.receive<mymsg>(overloaded{[&](mymsg &msg) {}}),
-        (std::string("unknown message ") + std::to_string(std::hash<std::string>{}(mymsg1::name())))
-            .c_str(),
+        (std::string("unknown message ") + std::to_string(oink::message_tag<mymsg1>())).c_str(),
         oink::receiver::unknown_message);
   }
 
@@ -162,7 +161,7 @@ TEST_SUITE("receiver") {
     std::optional<std::size_t> received_hash = std::nullopt;
     rendpoint.receive(overloaded{[&](oink::receiver::msg &msg) { received_hash = msg.hash; }});
     CHECK(received_hash.has_value());
-    CHECK(received_hash.value() == std::hash<std::string>{}(mymsg1::name()));
+    CHECK(received_hash.value() == oink::message_tag<mymsg1>());
   }
 
   TEST_CASE("rescheduling") {

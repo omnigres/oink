@@ -32,9 +32,19 @@ template <typename Container, typename Mutex> struct shared_container {
 };
 
 template <typename T>
-concept message = requires(T t) {
+concept named_message = requires(T t) {
   { T::name() } -> std::same_as<const char *>;
 };
+
+template <typename T>
+concept message = named_message<T>;
+
+template <message T> std::size_t message_tag() {
+  if constexpr (named_message<T>) {
+    return std::hash<std::string>{}(T::name());
+  }
+  static_assert("message type tag unknown");
+}
 
 struct arena {
 
@@ -103,7 +113,7 @@ struct sender : endpoint {
     std::construct_at(msg_.get(), std::forward<Args>(args)...);
     std::ptrdiff_t offset = reinterpret_cast<char *>(msg_.get()) -
                             reinterpret_cast<char *>(arena.segment.get_address());
-    auto m = msg{.hash = std::hash<std::string>{}(M::name()), .offset = offset};
+    auto m = msg{.hash = message_tag<M>(), .offset = offset};
     mq.send(&m, sizeof(decltype(m)), 0);
     return *msg_;
   }
@@ -171,7 +181,7 @@ struct receiver : endpoint {
 
 private:
   template <message T> void try_handle(msg &j, bool &matched, bool &accepted, auto visitor) {
-    if (j.hash == std::hash<std::string>{}(T::name())) {
+    if (j.hash == message_tag<T>()) {
       if constexpr (requires(decltype(visitor) v, T &index) {
                       { v(index) };
                     }) {
