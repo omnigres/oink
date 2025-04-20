@@ -232,9 +232,7 @@ TEST_CASE("message deallocation & destruction") {
   struct mymsg {
     static constexpr const char *name() { return "msg"; }
     int i;
-    ~mymsg() {
-      destructor_ran = true;
-    }
+    ~mymsg() { destructor_ran = true; }
   };
 
   oink::arena arena("oink_test", 65536);
