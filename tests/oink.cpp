@@ -240,19 +240,19 @@ TEST_CASE("message deallocation & destruction") {
 
   oink::sender endpoint(arena, "oink_test_mq", 1024);
 
-  auto initial_free_memory = arena.get_segment_manager()->get_free_memory();
+  auto initial_free_memory = arena.get_free_memory();
 
   {
     auto m = endpoint.send<mymsg>(123);
-    CHECK(initial_free_memory != arena.get_segment_manager()->get_free_memory());
+    CHECK(initial_free_memory != arena.get_free_memory());
 
     oink::receiver rendpoint(arena, "oink_test_mq", 1024);
     int received = 0;
     CHECK(rendpoint.receive<mymsg>(overloaded{[&](mymsg &msg) { received = msg.i; }}));
 
-    CHECK(initial_free_memory != arena.get_segment_manager()->get_free_memory());
+    CHECK(initial_free_memory != arena.get_free_memory());
   }
 
-  CHECK(initial_free_memory == arena.get_segment_manager()->get_free_memory());
+  CHECK(initial_free_memory == arena.get_free_memory());
   CHECK(destructor_ran);
 }

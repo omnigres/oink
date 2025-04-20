@@ -71,6 +71,10 @@ struct arena {
 
   void *get_address() { return segment.get_address(); }
 
+  std::size_t get_free_memory() {
+    return segment.get_free_memory();
+  }
+
 protected:
   bip::managed_shared_memory segment;
 
