@@ -178,7 +178,6 @@ TEST_SUITE("receiver") {
     oink::arena arena("oink_test", 65536);
 
     oink::sender endpoint(arena, "oink_test_mq", 1024);
-    // endpoint.send<mymsg1>("allocator", endpoint.get_allocator<char>());
 
     oink::receiver rendpoint(arena, "oink_test_mq", 1024);
 

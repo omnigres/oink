@@ -175,6 +175,10 @@ private:
     return reinterpret_cast<char *>(envelope) - reinterpret_cast<char *>(arena_.get_address());
   }
 
+  void retain() {
+    envelope = nullptr;
+  }
+
   message_envelope<M> *envelope;
   arena &arena_;
 };
@@ -269,6 +273,9 @@ private:
           visitor(p.operator T &());
         }
         matched = true;
+        if (!accepted) {
+          p.retain();
+        }
       }
     }
   }
