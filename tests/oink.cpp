@@ -1,8 +1,8 @@
 #include "doctest.h"
 
+#include <optional>
 #include <thread>
 #include <vector>
-#include <optional>
 
 #include <oink.hpp>
 

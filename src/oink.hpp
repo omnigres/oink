@@ -71,9 +71,7 @@ struct arena {
 
   void *get_address() { return segment.get_address(); }
 
-  std::size_t get_free_memory() {
-    return segment.get_free_memory();
-  }
+  std::size_t get_free_memory() { return segment.get_free_memory(); }
 
 protected:
   bip::managed_shared_memory segment;
@@ -180,9 +178,7 @@ private:
     return reinterpret_cast<char *>(envelope) - reinterpret_cast<char *>(arena_.get_address());
   }
 
-  void retain() {
-    envelope = nullptr;
-  }
+  void retain() { envelope = nullptr; }
 
   message_envelope<M> *envelope;
   arena &arena_;
@@ -222,7 +218,7 @@ struct receiver : endpoint {
 
     msg m;
     if (mq_.timed_receive(&m, sizeof(m), recvd_size, priority,
-                         std::chrono::system_clock::now() + std::chrono::milliseconds(500))) {
+                          std::chrono::system_clock::now() + std::chrono::milliseconds(500))) {
 
       bool matched = false;
       bool accepted = true;
