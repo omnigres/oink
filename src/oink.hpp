@@ -129,6 +129,7 @@ template <message M> struct message_envelope_receipt {
     if (envelope != nullptr) {
       std::size_t counter = envelope->counter.fetch_sub(1) - 1;
       if (counter == 0) {
+        std::destroy_at(envelope);
         arena_.get_allocator<message_envelope<M>>().deallocate(envelope, 1);
       }
     }

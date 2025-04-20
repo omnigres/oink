@@ -222,15 +222,19 @@ TEST_SUITE("receiver") {
   }
 }
 
-TEST_CASE("message deallocation") {
+TEST_CASE("message deallocation & destruction") {
   oink::bip::shared_memory_object::remove("oink_test");
   oink::bip::shared_memory_object::remove("oink_test_mq");
   oink::bip::remove_shared_memory_on_destroy _test("oink_test");
   oink::bip::remove_shared_memory_on_destroy _test_mq("oink_test_mq");
+  static bool destructor_ran = false;
 
   struct mymsg {
     static constexpr const char *name() { return "msg"; }
     int i;
+    ~mymsg() {
+      destructor_ran = true;
+    }
   };
 
   oink::arena arena("oink_test", 65536);
@@ -251,4 +255,5 @@ TEST_CASE("message deallocation") {
   }
 
   CHECK(initial_free_memory == arena.get_segment_manager()->get_free_memory());
+  CHECK(destructor_ran);
 }
