@@ -35,7 +35,7 @@ TEST_CASE("smoke test") {
   oink::sender endpoint(arena, "oink_test_mq", 1024);
 
   auto m = endpoint.send<mymsg>(123);
-  CHECK(m.i == 123);
+  CHECK(m->i == 123);
   mymsg1 m1 = endpoint.send<mymsg1>("allocator", endpoint.get_allocator<char>());
 
   CHECK(m1.message == "allocator");
@@ -45,7 +45,7 @@ TEST_CASE("smoke test") {
   CHECK(rendpoint.receive<mymsg, mymsg1>(
       overloaded{[&](mymsg &msg) { received = msg.i; }, [](mymsg1 &msg) {}}));
 
-  CHECK(received == m.i);
+  CHECK(received == m->i);
 
   std::string s;
   CHECK(rendpoint.receive<mymsg, mymsg1>(
@@ -221,4 +221,35 @@ TEST_SUITE("receiver") {
     }
     CHECK(!rendpoint.receive<mymsg>(overloaded{[&](oink::receiver::msg &) {}}));
   }
+}
+
+TEST_CASE("message deallocation") {
+  oink::bip::shared_memory_object::remove("oink_test");
+  oink::bip::shared_memory_object::remove("oink_test_mq");
+  oink::bip::remove_shared_memory_on_destroy _test("oink_test");
+  oink::bip::remove_shared_memory_on_destroy _test_mq("oink_test_mq");
+
+  struct mymsg {
+    static constexpr const char *name() { return "msg"; }
+    int i;
+  };
+
+  oink::arena arena("oink_test", 65536);
+
+  oink::sender endpoint(arena, "oink_test_mq", 1024);
+
+  auto initial_free_memory = arena.get_segment_manager()->get_free_memory();
+
+  {
+    auto m = endpoint.send<mymsg>(123);
+    CHECK(initial_free_memory != arena.get_segment_manager()->get_free_memory());
+
+    oink::receiver rendpoint(arena, "oink_test_mq", 1024);
+    int received = 0;
+    CHECK(rendpoint.receive<mymsg>(overloaded{[&](mymsg &msg) { received = msg.i; }}));
+
+    CHECK(initial_free_memory != arena.get_segment_manager()->get_free_memory());
+  }
+
+  CHECK(initial_free_memory == arena.get_segment_manager()->get_free_memory());
 }

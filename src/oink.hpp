@@ -6,6 +6,7 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/interprocess/ipc/message_queue.hpp>
 #include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/smart_ptr/shared_ptr.hpp>
 #include <boost/interprocess/sync/interprocess_semaphore.hpp>
 #include <boost/interprocess/sync/interprocess_upgradable_mutex.hpp>
 
@@ -51,6 +52,7 @@ struct arena {
   friend struct endpoint;
   friend struct sender;
   friend struct receiver;
+  template <message M> friend struct message_envelope_receipt;
 
   struct header {};
 
@@ -105,17 +107,88 @@ protected:
   msg_vec *msgs_;
 };
 
+template <message M> struct message_envelope {
+  template <typename... Args>
+  message_envelope(Args &&...args) : message(std::forward<Args>(args)...), counter(0) {}
+
+  operator M &() { return message; }
+
+  template <message M_> friend struct message_envelope_receipt;
+
+private:
+  M message;
+  std::atomic<std::size_t> counter;
+};
+
+template <message M> struct message_envelope_receipt {
+
+  M *operator->() { return &envelope->message; }
+  operator M &() { return envelope->message; }
+
+  ~message_envelope_receipt() {
+    if (envelope != nullptr) {
+      std::size_t counter = envelope->counter.fetch_sub(1) - 1;
+      if (counter == 0) {
+        arena_.get_allocator<message_envelope<M>>().deallocate(envelope, 1);
+      }
+    }
+  }
+
+  friend struct sender;
+  friend struct receiver;
+
+  message_envelope_receipt(const message_envelope_receipt &other)
+      : envelope(other.envelope), arena_(other.arena_) {
+    other.envelope->counter.fetch_add(1);
+  }
+
+  message_envelope_receipt(message_envelope_receipt &&other) noexcept
+      : envelope(other.envelope), arena_(other.arena_) {
+    other.envelope = nullptr;
+  }
+  message_envelope_receipt &operator=(const message_envelope_receipt &other) {
+    if (this == &other)
+      return *this;
+    envelope = other.envelope;
+    arena_ = other.arena_;
+    other.envelope->counter.fetch_add(1);
+    return *this;
+  }
+  message_envelope_receipt &operator=(message_envelope_receipt &&other) noexcept {
+    if (this == &other)
+      return *this;
+    envelope = other.envelope;
+    arena_ = other.arena_;
+    other.envelope = nullptr;
+    return *this;
+  }
+
+private:
+  message_envelope_receipt(message_envelope<M> *envelope, arena &arena, bool acquire = true)
+      : envelope(envelope), arena_(arena) {
+    if (acquire) {
+      envelope->counter.fetch_add(2);
+    }
+  }
+
+  std::ptrdiff_t offset() {
+    return reinterpret_cast<char *>(envelope) - reinterpret_cast<char *>(arena_.get_address());
+  }
+
+  message_envelope<M> *envelope;
+  arena &arena_;
+};
+
 struct sender : endpoint {
   using endpoint::endpoint;
 
-  template <message M, typename... Args> M &send(Args &&...args) {
-    auto msg_ = get_allocator<M>().allocate(1);
+  template <message M, typename... Args> message_envelope_receipt<M> send(Args &&...args) {
+    auto msg_ = arena.get_allocator<message_envelope<M>>().allocate(1);
     std::construct_at(msg_.get(), std::forward<Args>(args)...);
-    std::ptrdiff_t offset = reinterpret_cast<char *>(msg_.get()) -
-                            reinterpret_cast<char *>(arena.segment.get_address());
-    auto m = msg{.hash = message_tag<M>(), .offset = offset};
+    message_envelope_receipt<M> receipt = message_envelope_receipt(msg_.get(), arena);
+    auto m = msg{.hash = message_tag<M>(), .offset = receipt.offset()};
     mq.send(&m, sizeof(decltype(m)), 0);
-    return *msg_;
+    return receipt;
   }
 };
 
@@ -186,14 +259,14 @@ private:
                       { v(index) };
                     }) {
         using return_type = std::invoke_result_t<decltype(visitor), T &>;
-        auto p = reinterpret_cast<T *>(static_cast<char *>(arena.segment.get_address()) + j.offset);
+        message_envelope_receipt<T> p(
+            reinterpret_cast<message_envelope<T> *>(
+                static_cast<char *>(arena.segment.get_address()) + j.offset),
+            arena, false);
         if constexpr (std::same_as<return_type, bool>) {
-          accepted = visitor(*p);
+          accepted = visitor(p.operator T &());
         } else {
-          visitor(*p);
-        }
-        if (accepted) {
-          get_allocator<T>().deallocate(p, 1);
+          visitor(p.operator T &());
         }
         matched = true;
       }
