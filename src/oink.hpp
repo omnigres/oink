@@ -85,14 +85,14 @@ struct endpoint {
   };
 
   endpoint(arena &arena, const char *mq_segment_name, size_t mq_max_messages)
-      : arena(arena), mq(bip::open_or_create, mq_segment_name, mq_max_messages, sizeof(msg)),
+      : arena_(arena), mq_(bip::open_or_create, mq_segment_name, mq_max_messages, sizeof(msg)),
         msgs_(arena.get_segment_manager()->find_or_construct<msg_vec>("__msgs")(
             arena.get_segment_manager())) {}
 
-  template <typename T> auto get_allocator() { return arena.get_allocator<T>(); }
+  template <typename T> auto get_allocator() { return arena_.get_allocator<T>(); }
 
   template <typename T> T &get_msg(std::ptrdiff_t index) {
-    void *addr = static_cast<char *>(arena.segment.get_address()) + index;
+    void *addr = static_cast<char *>(arena_.segment.get_address()) + index;
     return reinterpret_cast<T &>(addr);
   }
 
@@ -101,8 +101,8 @@ protected:
   using msg_vec =
       shared_container<bc::vector<msg, msg_allocator_t>, bip::interprocess_recursive_mutex>;
 
-  arena &arena;
-  bip::message_queue mq;
+  arena &arena_;
+  bip::message_queue mq_;
 
   msg_vec *msgs_;
 };
@@ -188,11 +188,11 @@ struct sender : endpoint {
   using endpoint::endpoint;
 
   template <message M, typename... Args> message_envelope_receipt<M> send(Args &&...args) {
-    auto msg_ = arena.get_allocator<message_envelope<M>>().allocate(1);
+    auto msg_ = arena_.get_allocator<message_envelope<M>>().allocate(1);
     std::construct_at(msg_.get(), std::forward<Args>(args)...);
-    message_envelope_receipt<M> receipt = message_envelope_receipt(msg_.get(), arena);
+    message_envelope_receipt<M> receipt = message_envelope_receipt(msg_.get(), arena_);
     auto m = msg{.hash = message_tag<M>(), .offset = receipt.offset()};
-    mq.send(&m, sizeof(decltype(m)), 0);
+    mq_.send(&m, sizeof(decltype(m)), 0);
     return receipt;
   }
 };
@@ -217,7 +217,7 @@ struct receiver : endpoint {
     unsigned int priority;
 
     msg m;
-    if (mq.timed_receive(&m, sizeof(m), recvd_size, priority,
+    if (mq_.timed_receive(&m, sizeof(m), recvd_size, priority,
                          std::chrono::system_clock::now() + std::chrono::milliseconds(500))) {
 
       bool matched = false;
@@ -240,14 +240,14 @@ struct receiver : endpoint {
       }
 
       if (!accepted) {
-        mq.send(&m, sizeof(m), 0);
+        mq_.send(&m, sizeof(m), 0);
         return false;
       }
       if (!matched) {
         throw unknown_message(m.hash);
       }
 
-      if (mq.get_num_msg() == 0) {
+      if (mq_.get_num_msg() == 0) {
         msgs_->container.clear();
       }
 
@@ -266,8 +266,8 @@ private:
         using return_type = std::invoke_result_t<decltype(visitor), T &>;
         message_envelope_receipt<T> p(
             reinterpret_cast<message_envelope<T> *>(
-                static_cast<char *>(arena.segment.get_address()) + j.offset),
-            arena, false);
+                static_cast<char *>(arena_.segment.get_address()) + j.offset),
+            arena_, false);
         if constexpr (std::same_as<return_type, bool>) {
           accepted = visitor(p.operator T &());
         } else {
