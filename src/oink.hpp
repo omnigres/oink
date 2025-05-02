@@ -26,14 +26,17 @@ using allocator = bip::allocator<T, bip::managed_shared_memory::segment_manager>
 template <typename Container, typename Mutex> struct shared_container {
   using container_type = Container;
   using mutex_type = Mutex;
-  Container container;
-  Mutex mutex;
 
   template <typename... Args>
   explicit shared_container(Args &&...args) : container(std::forward<Args>(args)...) {}
 
-  operator container_type &() { return container; }
-  operator mutex_type &() { return mutex; }
+  std::pair<bip::scoped_lock<mutex_type>, container_type &> scoped_lock() {
+    return {bip::scoped_lock<mutex_type>(mutex), container};
+  }
+
+private:
+  Container container;
+  Mutex mutex;
 };
 
 template <typename T>
@@ -264,7 +267,8 @@ struct receiver : endpoint {
       }
 
       if (mq_.get_num_msg() == 0) {
-        msgs_->container.clear();
+        auto [lock, container] = msgs_->scoped_lock();
+        container.clear();
       }
 
       return true;
