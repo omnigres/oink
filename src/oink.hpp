@@ -74,6 +74,18 @@ struct arena {
 
   std::size_t get_free_memory() { return segment.get_free_memory(); }
 
+  template <class T, typename... Args> T *find_or_construct(const char *name, Args &&...args) {
+    return segment.find_or_construct<T>(name)(std::forward<Args>(args)...);
+  }
+
+  template <class T> std::optional<T *> find(const char *name) {
+    auto [ptr, _] = segment.find<T>(name);
+    if (ptr == nullptr) {
+      return std::nullopt;
+    }
+    return ptr;
+  }
+
 protected:
   bip::managed_shared_memory segment;
 

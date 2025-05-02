@@ -13,7 +13,39 @@ template <class... Ts> struct overloaded : Ts... {
 };
 template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-TEST_CASE("smoke test") {
+TEST_SUITE("arena") {
+  TEST_CASE("find") {
+    oink::bip::shared_memory_object::remove("oink_test");
+    oink::bip::shared_memory_object::remove("oink_test_mq");
+    oink::bip::remove_shared_memory_on_destroy _test("oink_test");
+    oink::bip::remove_shared_memory_on_destroy _test_mq("oink_test_mq");
+
+    oink::arena arena("oink_test", 65536);
+    CHECK(!arena.find<int>("any").has_value());
+  }
+
+  TEST_CASE("construction") {
+    oink::bip::shared_memory_object::remove("oink_test");
+    oink::bip::shared_memory_object::remove("oink_test_mq");
+    oink::bip::remove_shared_memory_on_destroy _test("oink_test");
+    oink::bip::remove_shared_memory_on_destroy _test_mq("oink_test_mq");
+
+    oink::arena arena("oink_test", 65536);
+    struct myt {
+      int a;
+      myt(int a_) : a(a_) {}
+    };
+    auto instance1 = arena.find_or_construct<myt>("myt", 1);
+    CHECK(instance1->a == 1);
+    auto instance2 = arena.find_or_construct<myt>("myt", 1);
+    CHECK(instance2->a == 1);
+    instance1->a = 2;
+    CHECK(instance2->a == 2);
+    CHECK((*arena.find<myt>("myt"))->a == 2);
+  }
+}
+
+TEST_CASE("messaging smoke test") {
   oink::bip::shared_memory_object::remove("oink_test");
   oink::bip::shared_memory_object::remove("oink_test_mq");
   oink::bip::remove_shared_memory_on_destroy _test("oink_test");
