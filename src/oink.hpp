@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef oink_hpp
+#define oink_hpp
+
 #include <atomic>
 #include <chrono>
 #include <map>
@@ -296,3 +299,5 @@ private:
 };
 
 } // namespace oink
+
+#endif
