@@ -35,9 +35,9 @@ TEST_SUITE("arena") {
       int a;
       myt(int a_) : a(a_) {}
     };
-    auto instance1 = arena.find_or_construct<myt>("myt", 1);
+    auto instance1 = arena.find_or_construct<myt>("myt")(1);
     CHECK(instance1->a == 1);
-    auto instance2 = arena.find_or_construct<myt>("myt", 1);
+    auto instance2 = arena.find_or_construct<myt>("myt")(1);
     CHECK(instance2->a == 1);
     instance1->a = 2;
     CHECK(instance2->a == 2);
