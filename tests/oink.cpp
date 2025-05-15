@@ -288,3 +288,23 @@ TEST_CASE("message deallocation & destruction") {
   CHECK(initial_free_memory == arena.get_free_memory());
   CHECK(destructor_ran);
 }
+
+TEST_CASE("message receipt copying") {
+  oink::bip::shared_memory_object::remove("oink_test");
+  oink::bip::shared_memory_object::remove("oink_test_mq");
+  oink::bip::remove_shared_memory_on_destroy _test("oink_test");
+  oink::bip::remove_shared_memory_on_destroy _test_mq("oink_test_mq");
+
+  struct mymsg {
+    static constexpr const char *name() { return "msg"; }
+    int i;
+  };
+
+  oink::arena arena("oink_test", 65536);
+
+  oink::sender endpoint(arena, "oink_test_mq", 1024);
+
+  oink::message_envelope_receipt<mymsg> receipt1 = endpoint.send<mymsg>(123);
+  oink::message_envelope_receipt<mymsg> receipt2 = endpoint.send<mymsg>(321);
+  receipt1 = receipt2;
+}

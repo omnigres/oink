@@ -157,7 +157,7 @@ template <message M> struct message_envelope_receipt {
       std::size_t counter = envelope->counter.fetch_sub(1) - 1;
       if (counter == 0) {
         std::destroy_at(envelope);
-        arena_.get_allocator<message_envelope<M>>().deallocate(envelope, 1);
+        arena_.get().template get_allocator<message_envelope<M>>().deallocate(envelope, 1);
       }
     }
   }
@@ -200,13 +200,14 @@ private:
   }
 
   std::ptrdiff_t offset() {
-    return reinterpret_cast<char *>(envelope) - reinterpret_cast<char *>(arena_.get_address());
+    return reinterpret_cast<char *>(envelope) -
+           reinterpret_cast<char *>(arena_.get().get_address());
   }
 
   void retain() { envelope = nullptr; }
 
   message_envelope<M> *envelope;
-  arena &arena_;
+  std::reference_wrapper<arena> arena_;
 };
 
 struct sender : endpoint {
