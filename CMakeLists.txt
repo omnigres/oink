@@ -10,6 +10,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Let's be as pedantic as we can
+add_compile_options(
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Werror
+)
+
 # Specify the include directory containing your headers
 # Replace "include" with the actual path to your include directory
 add_library(${PROJECT_NAME} INTERFACE)

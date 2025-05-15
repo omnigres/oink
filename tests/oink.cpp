@@ -76,7 +76,7 @@ TEST_CASE("messaging smoke test") {
   oink::receiver rendpoint(arena, "oink_test_mq", 1024);
   int received = 0;
   CHECK(rendpoint.receive<mymsg, mymsg1>(
-      overloaded{[&](mymsg &msg) { received = msg.i; }, [](mymsg1 &msg) {}}));
+      overloaded{[&](mymsg &msg) { received = msg.i; }, [](mymsg1 &) {}}));
 
   CHECK(received == m->i);
 
@@ -128,8 +128,8 @@ TEST_CASE("smoke test (multithreading)") {
   rt.join();
   CHECK(values.size() == 100);
   std::sort(values.begin(), values.end());
-  for (int i = 0; auto &val : values) {
-    CHECK(values[i] == i);
+  for (int i = 0; auto &v : values) {
+    CHECK(v == i);
     i++;
   }
 }
@@ -161,7 +161,7 @@ TEST_SUITE("receiver") {
     oink::receiver rendpoint(arena, "oink_test_mq", 1024);
 
     CHECK_THROWS_WITH_AS(
-        rendpoint.receive<mymsg>(overloaded{[&](mymsg &msg) {}}),
+        rendpoint.receive<mymsg>(overloaded{[&](mymsg &) {}}),
         (std::string("unknown message ") + std::to_string(oink::message_tag<mymsg1>())).c_str(),
         oink::receiver::unknown_message);
   }
