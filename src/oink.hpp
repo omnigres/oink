@@ -66,13 +66,21 @@ struct arena {
   friend struct receiver;
   template <message M> friend struct message_envelope_receipt;
 
-  struct header {};
+  struct header {
+    header(std::size_t _segment_size) : segment_size(_segment_size) {}
+    std::size_t segment_size;
+  };
 
   using header_t = shared_container<header, bip::interprocess_upgradable_mutex>;
 
+  arena(const char *segment_name) : segment(bip::open_only, segment_name) {
+    auto [container, _b] = segment.find<header_t>("__header");
+    header_ = container;
+  }
+
   arena(const char *segment_name, size_t segment_size)
       : segment(bip::open_or_create, segment_name, segment_size),
-        header_(segment.find_or_construct<header_t>("__header")()) {}
+        header_(segment.find_or_construct<header_t>("__header")(segment_size)) {}
 
   auto get_segment_manager() { return segment.get_segment_manager(); }
 
@@ -99,6 +107,11 @@ struct arena {
   }
 
   operator bip::managed_shared_memory &() { return segment; }
+
+  std::size_t get_segment_size() {
+    auto [lock, val] = header_->scoped_lock();
+    return val.segment_size;
+  }
 
 protected:
   bip::managed_shared_memory segment;

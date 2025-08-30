@@ -14,6 +14,23 @@ template <class... Ts> struct overloaded : Ts... {
 template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 TEST_SUITE("arena") {
+
+  TEST_CASE("size info") {
+    oink::bip::shared_memory_object::remove("oink_test");
+    oink::bip::remove_shared_memory_on_destroy _test("oink_test");
+
+    {
+      oink::arena arena("oink_test", 65536);
+      CHECK(arena.get_segment_size() == 65536);
+    }
+
+    // Reopen
+    {
+      oink::arena arena("oink_test");
+      CHECK(arena.get_segment_size() == 65536);
+    }
+  }
+
   TEST_CASE("find") {
     oink::bip::shared_memory_object::remove("oink_test");
     oink::bip::shared_memory_object::remove("oink_test_mq");
