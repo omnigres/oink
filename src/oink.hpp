@@ -98,6 +98,10 @@ struct arena {
     return ptr;
   }
 
+  operator bip::managed_shared_memory &() {
+    return segment;
+  }
+
 protected:
   bip::managed_shared_memory segment;
 
