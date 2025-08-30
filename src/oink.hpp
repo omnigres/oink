@@ -71,13 +71,13 @@ struct arena {
 
   using header_t = shared_container<header, bip::interprocess_upgradable_mutex>;
 
-  arena(const char *segment_name) : segment(bip::open_only, segment_name) {
+  arena(const char *segment_name) : name(segment_name), segment(bip::open_only, segment_name) {
     auto [container, _b] = segment.find<header_t>("__header");
     header_ = container;
   }
 
   arena(const char *segment_name, size_t segment_size)
-      : segment(bip::open_or_create, segment_name, segment_size),
+      : name(segment_name), segment(bip::open_or_create, segment_name, segment_size),
         header_(segment.find_or_construct<header_t>("__header")()) {}
 
   auto get_segment_manager() { return segment.get_segment_manager(); }
@@ -109,9 +109,23 @@ struct arena {
   std::size_t get_segment_size() { return segment.get_size(); }
 
 protected:
+  std::string name;
   bip::managed_shared_memory segment;
 
   header_t *header_;
+};
+
+struct transient_arena : arena {
+
+  // We use `name.c_str()` to make sure `removal_` has a pointer to a string with a valid
+  // lifetime. The one in the argument can go away at any time.
+  explicit transient_arena(const char *segment_name)
+      : arena(segment_name), removal_(name.c_str()) {}
+  transient_arena(const char *segment_name, size_t segment_size)
+      : arena(segment_name, segment_size), removal_(name.c_str()) {}
+
+private:
+  bip::remove_shared_memory_on_destroy removal_;
 };
 
 struct endpoint {

@@ -31,6 +31,25 @@ TEST_SUITE("arena") {
     }
   }
 
+  TEST_CASE("transient arena") {
+    oink::bip::shared_memory_object::remove("oink_test");
+
+    {
+      oink::transient_arena arena1("oink_test", 65536);
+      {
+        oink::transient_arena arena2("oink_test");
+        arena2.find_or_construct<int>("test")(1);
+      }
+      // Opening a new one will result in an error:
+      CHECK_THROWS(oink::arena("oink_test"));
+      // But existing one still works
+      CHECK((*arena1.find<int>("test").value()) == 1);
+    }
+
+    // Now we should not be able to find it
+    CHECK_THROWS(oink::arena("oink_test"));
+  }
+
   TEST_CASE("find") {
     oink::bip::shared_memory_object::remove("oink_test");
     oink::bip::shared_memory_object::remove("oink_test_mq");
