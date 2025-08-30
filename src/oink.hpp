@@ -98,9 +98,7 @@ struct arena {
     return ptr;
   }
 
-  operator bip::managed_shared_memory &() {
-    return segment;
-  }
+  operator bip::managed_shared_memory &() { return segment; }
 
 protected:
   bip::managed_shared_memory segment;
@@ -154,6 +152,7 @@ private:
 template <message M> struct message_envelope_receipt {
 
   M *operator->() { return &envelope->message; }
+
   operator M &() { return envelope->message; }
 
   ~message_envelope_receipt() {
@@ -178,6 +177,7 @@ template <message M> struct message_envelope_receipt {
       : envelope(other.envelope), arena_(other.arena_) {
     other.envelope = nullptr;
   }
+
   message_envelope_receipt &operator=(const message_envelope_receipt &other) {
     if (this == &other)
       return *this;
@@ -186,6 +186,7 @@ template <message M> struct message_envelope_receipt {
     other.envelope->counter.fetch_add(1);
     return *this;
   }
+
   message_envelope_receipt &operator=(message_envelope_receipt &&other) noexcept {
     if (this == &other)
       return *this;
@@ -235,6 +236,7 @@ struct receiver : endpoint {
         : hash(hash), message(std::string("unknown message ") + std::to_string(hash)) {}
 
     const char *what() const noexcept override { return message.c_str(); }
+
     std::size_t message_hash() const { return hash; }
 
   private:
