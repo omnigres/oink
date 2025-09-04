@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <map>
+#include <optional>
 #include <typeindex>
 
 #include <boost/interprocess/allocators/allocator.hpp>
